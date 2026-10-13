@@ -168,7 +168,7 @@ function menu() {
 			click: (item) => { config.skip = item.checked ? config.skip.filter((k) => k !== kind) : [...new Set([...config.skip, kind])]; saveConfig(); openOverlay(); },
 		})) },
 		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); openOverlay(); } })) },
-		{ label: 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
+		{ label: process.platform === 'darwin' ? 'Запускати при вході в систему' : 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
 		{ type: 'separator' },
 		{ label: 'Відкрити панель', click: () => shell.openExternal(`${BASE}/dashboard`) },
 		{ label: 'Вийти', click: () => app.quit() },
@@ -182,6 +182,7 @@ else {
 	app.on('second-instance', () => { /* the tray is the app: a second launch changes nothing */ });
 	app.on('window-all-closed', () => { /* a tray app: closing a window must not quit it */ });
 	app.whenReady().then(() => {
+		app.dock?.hide(); // macOS: a tray app, no Dock icon, and its overlay may sit over full-screen apps
 		loadConfig(); token = loadToken();
 		tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png')));
 		screen.on('display-added', refresh); screen.on('display-removed', () => { openOverlay(); refresh(); });

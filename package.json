@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
-    "dist": "electron-builder --win nsis --publish never"
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac dmg --universal --publish never"
   },
   "devDependencies": {
     "electron": "33.2.1",
@@ -33,6 +34,16 @@
       "perMachine": false,
       "deleteAppDataOnUninstall": false,
       "artifactName": "twitchclanhub-setup.exe"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "icon": "assets/icon.png",
+      "identity": null,
+      "artifactName": "twitchclanhub-mac.${ext}"
+    },
+    "dmg": {
+      "title": "twitchclanhub"
     }
   },
   "license": "MIT"
