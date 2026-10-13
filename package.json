@@ -1,6 +1,6 @@
 {
   "name": "twitchclanhub-desktop",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Tray app: draws the channel's alerts over the streamer's own screen",
   "main": "main.js",
@@ -23,6 +23,8 @@
     "files": [
       "main.js",
       "flow.js",
+      "log.js",
+      "updater.js",
       "assets/**"
     ],
     "win": {
@@ -44,7 +46,17 @@
     },
     "dmg": {
       "title": "twitchclanhub"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "alohamonius",
+        "repo": "twitchclanhub-desktop"
+      }
+    ]
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  }
 }

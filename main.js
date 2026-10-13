@@ -10,6 +10,7 @@ const path = require('node:path');
 const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, safeStorage, screen, session, shell } = require('electron');
 const { pairDevice, PairingError } = require('./flow.js');
 const { createLog } = require('./log.js');
+const { createUpdater } = require('./updater.js');
 
 const BASE = (process.env.TCH_BASE || 'https://twitchclanhub.com').replace(/\/$/, '');
 // The effect kinds fx.html can draw (packages/shared/src/effects.ts), with the names the streamer sees.
@@ -47,6 +48,18 @@ function saveToken(value) {
 }
 
 function note(message) { log.write(message); }
+
+// Windows only: macOS updates need a signed app, so there it stays a manual download for now.
+const RELEASES = 'https://github.com/alohamonius/twitchclanhub-desktop/releases/latest';
+const updater = createUpdater({
+	autoUpdater: process.platform === 'win32' && app.isPackaged ? require('electron-updater').autoUpdater : null,
+	supported: process.platform === 'win32' && app.isPackaged,
+	log: (message) => note(message),
+	onChange: (state) => {
+		if (state.phase === 'ready') notify(`Нова версія ${state.version} готова. Вона встановиться при наступному запуску, або оберіть у треї «Перезапустити й оновити».`);
+		refresh();
+	},
+});
 function notify(body) { try { new Notification({ title: 'twitchclanhub', body }).show(); } catch { /* no notification support */ } }
 
 function targetDisplay() {
@@ -176,7 +189,7 @@ async function clearCache() {
 
 /** What support needs first: version, system, state, then the newest log lines. No token, no key. */
 function supportText() {
-	const head = [`twitchclanhub desktop ${app.getVersion()}`, `${process.platform} ${os.release()} ${process.arch}`, `electron ${process.versions.electron}`, `server ${BASE}`, `state ${pairing ? 'pairing' : status}, ${token ? 'signed in' : 'not signed in'}`, `muted ${config.muted}, hidden effects: ${config.skip.join(',') || 'none'}`];
+	const head = [`twitchclanhub desktop ${app.getVersion()}`, `${process.platform} ${os.release()} ${process.arch}`, `electron ${process.versions.electron}`, `server ${BASE}`, `state ${pairing ? 'pairing' : status}, ${token ? 'signed in' : 'not signed in'}, updates ${updater.state.phase}`, `muted ${config.muted}, hidden effects: ${config.skip.join(',') || 'none'}`];
 	return `${head.join('\n')}\n\n${log.tail(300)}`;
 }
 function copyLogs() { clipboard.writeText(supportText()); note('logs copied to the clipboard'); notify('Логи скопійовано. Вставте їх у повідомлення в підтримку.'); }
@@ -202,6 +215,7 @@ function menu() {
 		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); openOverlay(); } })) },
 		{ label: process.platform === 'darwin' ? 'Запускати при вході в систему' : 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
 		{ type: 'separator' },
+		updateItem(),
 		{ label: 'Підтримка', submenu: [
 			{ label: 'Очистити кеш', click: () => void clearCache() },
 			{ label: 'Скопіювати логи', click: copyLogs },
@@ -210,6 +224,17 @@ function menu() {
 		{ label: 'Відкрити панель', click: () => shell.openExternal(`${BASE}/dashboard`) },
 		{ label: 'Вийти', click: () => app.quit() },
 	]);
+}
+
+/** The tray's update line: the state of the updater, or a link to the releases where it cannot update itself. */
+function updateItem() {
+	const { phase, version, percent } = updater.state;
+	if (phase === 'unsupported') return { label: `Версія ${app.getVersion()} · завантажити нову`, click: () => shell.openExternal(RELEASES) };
+	if (phase === 'checking') return { label: `Версія ${app.getVersion()} · перевіряю оновлення…`, enabled: false };
+	if (phase === 'downloading') return { label: `Версія ${app.getVersion()} · завантажую ${version ?? ''} ${percent ?? 0}%`, enabled: false };
+	if (phase === 'ready') return { label: `Перезапустити й оновити до ${version}`, click: () => updater.installNow() };
+	if (phase === 'error') return { label: `Версія ${app.getVersion()} · оновлення не вдалось, ще раз`, click: () => void updater.check() };
+	return { label: `Версія ${app.getVersion()} · перевірити оновлення`, click: () => void updater.check() };
 }
 
 function refresh() { if (tray) { tray.setContextMenu(menu()); tray.setToolTip(`twitchclanhub · ${pairing ? 'підключення' : STATUS_LABEL[status]}`); } }
@@ -228,5 +253,6 @@ else {
 		screen.on('display-added', refresh); screen.on('display-removed', () => { openOverlay(); refresh(); });
 		if (token) openOverlay(); else void startPairing();
 		refresh();
+		updater.start();
 	});
 }

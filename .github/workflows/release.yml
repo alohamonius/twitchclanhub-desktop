@@ -2,7 +2,8 @@ name: Release
 
 # A v* tag builds the standalone installers (Windows NSIS, macOS universal DMG) and publishes them
 # as one GitHub Release. The website links to .../releases/latest/download/<fixed name>, so the
-# names must stay: twitchclanhub-setup.exe, twitchclanhub-mac.dmg.
+# names must stay: twitchclanhub-setup.exe, twitchclanhub-mac.dmg. The Windows build also ships
+# latest.yml and the .blockmap: electron-updater reads them from the latest release.
 
 on:
   push:
@@ -20,7 +21,10 @@ jobs:
         include:
           - os: windows-latest
             script: dist:win
-            file: dist/twitchclanhub-setup.exe
+            file: |
+              dist/twitchclanhub-setup.exe
+              dist/twitchclanhub-setup.exe.blockmap
+              dist/latest.yml
             artifact: windows
           - os: macos-latest
             script: dist:mac
@@ -36,6 +40,12 @@ jobs:
       - run: npm ci
       - run: node --test "test/*.test.js"
       - run: npm run ${{ matrix.script }}
+      - name: The updater's manifest must exist (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Get-ChildItem dist | Select-Object Name, Length
+          if (-not (Test-Path dist/latest.yml)) { throw 'dist/latest.yml is missing: auto-update would not work' }
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
