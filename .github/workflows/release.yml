@@ -18,18 +18,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, script: 'dist:win', file: 'dist/twitchclanhub-setup.exe', artifact: windows }
-          - { os: macos-latest, script: 'dist:mac', file: 'dist/twitchclanhub-mac.dmg', artifact: mac }
+          - os: windows-latest
+            script: dist:win
+            file: dist/twitchclanhub-setup.exe
+            artifact: windows
+          - os: macos-latest
+            script: dist:mac
+            file: dist/twitchclanhub-mac.dmg
+            artifact: mac
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22.18.0, cache: npm }
+        with:
+          node-version: 22.18.0
+          cache: npm
       - run: npm ci
       - run: node --test "test/*.test.js"
       - run: npm run ${{ matrix.script }}
       - uses: actions/upload-artifact@v4
-        with: { name: ${{ matrix.artifact }}, path: ${{ matrix.file }}, if-no-files-found: error }
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.file }}
+          if-no-files-found: error
 
   publish:
     needs: build
@@ -37,7 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
-        with: { path: assets, merge-multiple: true }
+        with:
+          path: assets
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           files: assets/*
