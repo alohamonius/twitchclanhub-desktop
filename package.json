@@ -1,0 +1,39 @@
+{
+  "name": "twitchclanhub-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tray app: draws the channel's alerts over the streamer's own screen",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.twitchclanhub.desktop",
+    "productName": "twitchclanhub",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "flow.js",
+      "assets/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "twitchclanhub-setup.exe"
+    }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,31 @@
+name: Release
+
+# A v* tag builds the Windows installer and publishes it as a GitHub Release. The website links to
+# .../releases/latest/download/twitchclanhub-setup.exe, so the name must stay fixed.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22.18.0, cache: npm }
+      - run: npm ci
+      - run: node --test "test/*.test.js"
+      - run: npm run dist
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: dist/twitchclanhub-setup.exe
+          generate_release_notes: true
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with: { name: twitchclanhub-setup, path: dist/twitchclanhub-setup.exe, if-no-files-found: error }
