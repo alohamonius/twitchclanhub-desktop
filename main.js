@@ -7,8 +7,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Notification, Tray, nativeImage, safeStorage, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, safeStorage, screen, session, shell } = require('electron');
 const { pairDevice, PairingError } = require('./flow.js');
+const { createLog } = require('./log.js');
 
 const BASE = (process.env.TCH_BASE || 'https://twitchclanhub.com').replace(/\/$/, '');
 // The effect kinds fx.html can draw (packages/shared/src/effects.ts), with the names the streamer sees.
@@ -23,6 +24,7 @@ let overlay = null;
 let pairing = null; // { window, cancelled }
 let status = 'unpaired';
 let checkTimer = null;
+let log = { write() {}, tail: () => '', dir: '' }; // a real log from whenReady on
 
 const userFile = (name) => path.join(app.getPath('userData'), name);
 function loadConfig() { try { config = { ...defaults, ...JSON.parse(fs.readFileSync(userFile('config.json'), 'utf8')) }; } catch { config = { ...defaults }; } }
@@ -44,6 +46,7 @@ function saveToken(value) {
 	} catch { /* kept in memory for this run */ }
 }
 
+function note(message) { log.write(message); }
 function notify(body) { try { new Notification({ title: 'twitchclanhub', body }).show(); } catch { /* no notification support */ } }
 
 function targetDisplay() {
@@ -56,6 +59,7 @@ function stopChecks() { if (checkTimer) clearInterval(checkTimer); checkTimer = 
 
 /** The token is wrong or ended in the dashboard: forget it, say so, and wait to be paired again. */
 function signedOut(reason) {
+	note(`signed out: ${reason}`);
 	stopChecks(); closeOverlay(); saveToken(null); status = 'unpaired'; refresh();
 	notify(reason);
 }
@@ -68,6 +72,7 @@ function overlayUrl() {
 
 function openOverlay() {
 	closeOverlay(); stopChecks();
+	note('opening the overlay');
 	if (!token) { status = 'unpaired'; return; }
 	// The one place the token leaves this process: a header on requests to our own origin.
 	const wire = session.fromPartition(PARTITION);
@@ -88,11 +93,13 @@ function openOverlay() {
 	// The page shows "fx: reconnecting" while its socket is down; that text must never sit over a game.
 	overlay.webContents.on('dom-ready', () => { overlay.webContents.insertCSS('#status{display:none !important}').catch(() => undefined); });
 	overlay.webContents.on('did-navigate', (_event, _url, code) => {
+		note(`page loaded: HTTP ${code}`);
 		if (code === 404) { signedOut('Програму відключено від каналу. Підключіть її знову в треї.'); return; }
 		status = 'connected'; refresh();
 	});
 	overlay.webContents.on('did-fail-load', (_event, _code, _text, _url, isMainFrame) => {
 		if (!isMainFrame) return;
+		note(`page failed to load: ${_text} (${_code})`);
 		status = 'offline'; refresh();
 		setTimeout(() => { if (overlay && !overlay.isDestroyed()) overlay.loadURL(overlayUrl()).catch(() => undefined); }, 10_000);
 	});
@@ -138,10 +145,12 @@ async function startPairing() {
 				window.loadURL(pairingPage(userCode, verifyUrl));
 			},
 		});
+		note('paired: a device token was received');
 		saveToken(result);
 		notify('Підключено. Ефекти з’являться поверх гри.');
 		openOverlay();
 	} catch (error) {
+		note(`pairing ended: ${error?.reason ?? error?.message ?? 'unknown'}`);
 		if (!(error instanceof PairingError && error.reason === 'cancelled')) notify(PAIR_MESSAGES[error?.reason] ?? 'Не вдалося підключитися.');
 	} finally {
 		if (current.window && !current.window.isDestroyed()) current.window.destroy();
@@ -149,6 +158,29 @@ async function startPairing() {
 		refresh();
 	}
 }
+
+/** The browser cache and web storage of the overlay window; the sign-in (the token) is not touched. */
+async function clearCache() {
+	try {
+		const wire = session.fromPartition(PARTITION);
+		await wire.clearCache();
+		await wire.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'localstorage', 'indexdb', 'filesystem', 'shadercache'] });
+		note('cache cleared');
+		if (token) openOverlay();
+		notify('Кеш очищено. Підключення до каналу збережено.');
+	} catch (error) {
+		note(`cache clear failed: ${error?.message ?? error}`);
+		notify('Не вдалося очистити кеш.');
+	}
+}
+
+/** What support needs first: version, system, state, then the newest log lines. No token, no key. */
+function supportText() {
+	const head = [`twitchclanhub desktop ${app.getVersion()}`, `${process.platform} ${os.release()} ${process.arch}`, `electron ${process.versions.electron}`, `server ${BASE}`, `state ${pairing ? 'pairing' : status}, ${token ? 'signed in' : 'not signed in'}`, `muted ${config.muted}, hidden effects: ${config.skip.join(',') || 'none'}`];
+	return `${head.join('\n')}\n\n${log.tail(300)}`;
+}
+function copyLogs() { clipboard.writeText(supportText()); note('logs copied to the clipboard'); notify('Логи скопійовано. Вставте їх у повідомлення в підтримку.'); }
+function openLogFolder() { shell.openPath(log.dir).catch(() => undefined); }
 
 const STATUS_LABEL = { unpaired: 'Не підключено до каналу', connecting: 'Підключення…', connected: 'Підключено', offline: 'Немає зв’язку, пробую ще' };
 
@@ -170,6 +202,11 @@ function menu() {
 		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); openOverlay(); } })) },
 		{ label: process.platform === 'darwin' ? 'Запускати при вході в систему' : 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
 		{ type: 'separator' },
+		{ label: 'Підтримка', submenu: [
+			{ label: 'Очистити кеш', click: () => void clearCache() },
+			{ label: 'Скопіювати логи', click: copyLogs },
+			{ label: 'Відкрити папку з логами', click: openLogFolder },
+		] },
 		{ label: 'Відкрити панель', click: () => shell.openExternal(`${BASE}/dashboard`) },
 		{ label: 'Вийти', click: () => app.quit() },
 	]);
@@ -183,7 +220,10 @@ else {
 	app.on('window-all-closed', () => { /* a tray app: closing a window must not quit it */ });
 	app.whenReady().then(() => {
 		app.dock?.hide(); // macOS: a tray app, no Dock icon, and its overlay may sit over full-screen apps
+		log = createLog({ dir: path.join(app.getPath('userData'), 'logs') });
+		process.on('uncaughtException', (error) => note(`uncaught: ${error?.stack ?? error}`));
 		loadConfig(); token = loadToken();
+		note(`started ${app.getVersion()} on ${process.platform} ${os.release()} ${process.arch}, electron ${process.versions.electron}, server ${BASE}, ${token ? 'signed in' : 'not signed in'}`);
 		tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png')));
 		screen.on('display-added', refresh); screen.on('display-removed', () => { openOverlay(); refresh(); });
 		if (token) openOverlay(); else void startPairing();
