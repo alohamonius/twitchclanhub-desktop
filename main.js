@@ -1,6 +1,8 @@
 // The tray app. One transparent, click-through window over the game loads the channel's /screen
 // page, the same page OBS draws, so an alert bought by a viewer shows on the stream (OBS) and on the
-// streamer's own screen (here). It signs in by code (flow.js), holds a token of its own in the OS's
+// streamer's own screen (here). overlay.js keeps it one window for the whole sign-in, moved and
+// reloaded in place, never recreated over a running game, and topmost again every few seconds.
+// It signs in by code (flow.js), holds a token of its own in the OS's
 // secret store, and sends it as an Authorization header: no secret is ever in a URL or a file in
 // the clear. No effect logic lives here.
 'use strict';
@@ -10,6 +12,7 @@ const path = require('node:path');
 const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, safeStorage, screen, session, shell } = require('electron');
 const { pairDevice, PairingError } = require('./flow.js');
 const { createLog } = require('./log.js');
+const { createOverlay } = require('./overlay.js');
 const { createUpdater } = require('./updater.js');
 
 const BASE = (process.env.TCH_BASE || 'https://twitchclanhub.com').replace(/\/$/, '');
@@ -21,7 +24,6 @@ const defaults = { muted: false, skip: [], display: null };
 let config = { ...defaults };
 let token = null;
 let tray = null;
-let overlay = null;
 let pairing = null; // { window, cancelled }
 let status = 'unpaired';
 let checkTimer = null;
@@ -49,6 +51,9 @@ function saveToken(value) {
 
 function note(message) { log.write(message); }
 
+// The overlay window, one per sign-in (overlay.js); makeOverlayWindow below builds it when asked.
+const overlay = createOverlay({ createWindow: makeOverlayWindow, log: note });
+
 // Windows only: macOS updates need a signed app, so there it stays a manual download for now.
 const RELEASES = 'https://github.com/alohamonius/twitchclanhub-desktop/releases/latest';
 const updater = createUpdater({
@@ -67,13 +72,19 @@ function targetDisplay() {
 	return all.find((d) => d.id === config.display) || screen.getPrimaryDisplay();
 }
 
-function closeOverlay() { if (overlay && !overlay.isDestroyed()) overlay.destroy(); overlay = null; }
 function stopChecks() { if (checkTimer) clearInterval(checkTimer); checkTimer = null; }
+/** A device ended in the dashboard: the page's socket is refused and keeps retrying quietly, so ask once a minute. */
+function startChecks() {
+	if (checkTimer) return;
+	checkTimer = setInterval(async () => {
+		try { const response = await fetch(`${BASE}/screen`, { headers: { Authorization: `Bearer ${token}` } }); if (response.status === 404) signedOut('Програму відключено від каналу. Підключіть її знову в треї.'); } catch { /* offline: the page retries */ }
+	}, 60_000);
+}
 
 /** The token is wrong or ended in the dashboard: forget it, say so, and wait to be paired again. */
 function signedOut(reason) {
 	note(`signed out: ${reason}`);
-	stopChecks(); closeOverlay(); saveToken(null); status = 'unpaired'; refresh();
+	stopChecks(); overlay.close(); saveToken(null); status = 'unpaired'; refresh();
 	notify(reason);
 }
 
@@ -83,49 +94,53 @@ function overlayUrl() {
 	return `${BASE}/screen${query.size ? `?${query}` : ''}`;
 }
 
-function openOverlay() {
-	closeOverlay(); stopChecks();
-	note('opening the overlay');
-	if (!token) { status = 'unpaired'; return; }
-	// The one place the token leaves this process: a header on requests to our own origin.
+/** The one place the token leaves this process: a header on requests to our own origin. Once, at start; it reads the token of the moment. */
+function wireSession() {
 	const wire = session.fromPartition(PARTITION);
 	const origin = new URL(BASE);
 	const patterns = [`${origin.protocol}//${origin.host}/*`, `${origin.protocol === 'https:' ? 'wss' : 'ws'}://${origin.host}/*`];
 	wire.webRequest.onBeforeSendHeaders({ urls: patterns }, (details, done) => { done({ requestHeaders: { ...details.requestHeaders, Authorization: `Bearer ${token}` } }); });
+}
 
-	const { x, y, width, height } = targetDisplay().bounds;
-	overlay = new BrowserWindow({
+/** Builds the overlay window at these bounds. overlay.js decides when: once per sign-in, then it is moved and reloaded in place. */
+function makeOverlayWindow({ x, y, width, height }) {
+	const window = new BrowserWindow({
 		x, y, width, height, transparent: true, frame: false, resizable: false, movable: false, focusable: false,
 		skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
-		webPreferences: { session: wire, autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, contextIsolation: true, sandbox: true },
+		webPreferences: { session: session.fromPartition(PARTITION), autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, contextIsolation: true, sandbox: true },
 	});
-	overlay.setAlwaysOnTop(true, 'screen-saver');
-	overlay.setIgnoreMouseEvents(true);
-	overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-	overlay.webContents.setAudioMuted(config.muted);
+	window.setAlwaysOnTop(true, 'screen-saver');
+	window.setIgnoreMouseEvents(true);
+	window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 	// The page shows "fx: reconnecting" while its socket is down; that text must never sit over a game.
-	overlay.webContents.on('dom-ready', () => { overlay.webContents.insertCSS('#status{display:none !important}').catch(() => undefined); });
-	overlay.webContents.on('did-navigate', (_event, _url, code) => {
+	window.webContents.on('dom-ready', () => { window.webContents.insertCSS('#status{display:none !important}').catch(() => undefined); });
+	window.webContents.on('did-navigate', (_event, _url, code) => {
 		note(`page loaded: HTTP ${code}`);
 		if (code === 404) { signedOut('Програму відключено від каналу. Підключіть її знову в треї.'); return; }
 		status = 'connected'; refresh();
 	});
-	overlay.webContents.on('did-fail-load', (_event, _code, _text, _url, isMainFrame) => {
-		if (!isMainFrame) return;
-		note(`page failed to load: ${_text} (${_code})`);
+	window.webContents.on('did-fail-load', (_event, code, text, _url, isMainFrame) => {
+		if (!isMainFrame || code === -3) return; // -3: a load cut short by the next one, not a failure
+		note(`page failed to load: ${text} (${code})`);
 		status = 'offline'; refresh();
-		setTimeout(() => { if (overlay && !overlay.isDestroyed()) overlay.loadURL(overlayUrl()).catch(() => undefined); }, 10_000);
+		setTimeout(() => overlay.reload(), 10_000);
 	});
 	// Never navigate away from our own page, never open a window.
-	overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-	overlay.webContents.on('will-navigate', (event) => event.preventDefault());
-	overlay.once('ready-to-show', () => overlay.showInactive());
-	status = 'connecting'; refresh();
-	overlay.loadURL(overlayUrl()).catch(() => undefined);
-	// A device ended in the dashboard: the page's socket is refused and keeps retrying quietly, so ask once a minute.
-	checkTimer = setInterval(async () => {
-		try { const response = await fetch(`${BASE}/screen`, { headers: { Authorization: `Bearer ${token}` } }); if (response.status === 404) signedOut('Програму відключено від каналу. Підключіть її знову в треї.'); } catch { /* offline: the page retries */ }
-	}, 60_000);
+	window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+	window.webContents.on('will-navigate', (event) => event.preventDefault());
+	window.once('ready-to-show', () => { window.showInactive(); overlay.reassert(); });
+	return window;
+}
+
+/** The overlay as the settings want it now: created on the first call, afterwards moved or reloaded in place. */
+function showOverlay() {
+	if (!token) { status = 'unpaired'; refresh(); return; }
+	const { x, y, width, height } = targetDisplay().bounds;
+	const did = overlay.show({ url: overlayUrl(), bounds: { x, y, width, height }, muted: config.muted });
+	if (did.includes('created')) note(`opening the overlay, ${width}x${height} at ${x},${y}`);
+	if (did.includes('moved')) note(`overlay moved, ${width}x${height} at ${x},${y}`);
+	if (did.includes('loaded')) { status = 'connecting'; refresh(); }
+	startChecks();
 }
 
 const PAIR_MESSAGES = { expired: 'Код застарів. Спробуйте підключитися ще раз.', unreachable: 'Немає зв’язку з twitchclanhub.', bad_response: 'Сервер відповів несподівано. Спробуйте пізніше.' };
@@ -161,7 +176,7 @@ async function startPairing() {
 		note('paired: a device token was received');
 		saveToken(result);
 		notify('Підключено. Ефекти з’являться поверх гри.');
-		openOverlay();
+		showOverlay();
 	} catch (error) {
 		note(`pairing ended: ${error?.reason ?? error?.message ?? 'unknown'}`);
 		if (!(error instanceof PairingError && error.reason === 'cancelled')) notify(PAIR_MESSAGES[error?.reason] ?? 'Не вдалося підключитися.');
@@ -179,7 +194,7 @@ async function clearCache() {
 		await wire.clearCache();
 		await wire.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'localstorage', 'indexdb', 'filesystem', 'shadercache'] });
 		note('cache cleared');
-		if (token) openOverlay();
+		overlay.reload();
 		notify('Кеш очищено. Підключення до каналу збережено.');
 	} catch (error) {
 		note(`cache clear failed: ${error?.message ?? error}`);
@@ -205,14 +220,14 @@ function menu() {
 		{ label: pairing ? 'Чекаю на підтвердження в панелі…' : STATUS_LABEL[status], enabled: false },
 		{ type: 'separator' },
 		paired
-			? { label: 'Відключити від каналу', click: () => { stopChecks(); closeOverlay(); saveToken(null); status = 'unpaired'; refresh(); } }
+			? { label: 'Відключити від каналу', click: () => { stopChecks(); overlay.close(); saveToken(null); status = 'unpaired'; refresh(); } }
 			: { label: pairing ? 'Скасувати підключення' : 'Підключити до каналу', click: () => { if (pairing) { pairing.cancelled = true; } else void startPairing(); } },
-		{ label: 'Вимкнути звук', type: 'checkbox', checked: config.muted, click: (item) => { config.muted = item.checked; saveConfig(); overlay?.webContents.setAudioMuted(config.muted); } },
+		{ label: 'Вимкнути звук', type: 'checkbox', checked: config.muted, click: (item) => { config.muted = item.checked; saveConfig(); overlay.setMuted(config.muted); } },
 		{ label: 'Що показувати на моєму екрані', submenu: KINDS.map(([kind, label]) => ({
 			label, type: 'checkbox', checked: !config.skip.includes(kind),
-			click: (item) => { config.skip = item.checked ? config.skip.filter((k) => k !== kind) : [...new Set([...config.skip, kind])]; saveConfig(); openOverlay(); },
+			click: (item) => { config.skip = item.checked ? config.skip.filter((k) => k !== kind) : [...new Set([...config.skip, kind])]; saveConfig(); showOverlay(); },
 		})) },
-		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); openOverlay(); } })) },
+		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); showOverlay(); } })) },
 		{ label: process.platform === 'darwin' ? 'Запускати при вході в систему' : 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
 		{ type: 'separator' },
 		updateItem(),
@@ -250,8 +265,13 @@ else {
 		loadConfig(); token = loadToken();
 		note(`started ${app.getVersion()} on ${process.platform} ${os.release()} ${process.arch}, electron ${process.versions.electron}, server ${BASE}, ${token ? 'signed in' : 'not signed in'}`);
 		tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png')));
-		screen.on('display-added', refresh); screen.on('display-removed', () => { openOverlay(); refresh(); });
-		if (token) openOverlay(); else void startPairing();
+		wireSession();
+		// A monitor comes or goes, or changes resolution or scale (a game going fullscreen often does
+		// both): the overlay follows the chosen display's new bounds and claims the top again. Nothing is recreated.
+		screen.on('display-added', () => { showOverlay(); refresh(); });
+		screen.on('display-removed', () => { showOverlay(); refresh(); });
+		screen.on('display-metrics-changed', (_event, display, changed) => { note(`display ${display.id} changed: ${changed.join(', ')}`); showOverlay(); refresh(); });
+		if (token) showOverlay(); else void startPairing();
 		refresh();
 		updater.start();
 	});
