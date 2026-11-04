@@ -22,6 +22,23 @@ test('every local module main.js requires is packaged', () => {
 	}
 });
 
+test('the tray and app icons the code and the build name exist, at the sizes macOS and Windows need', () => {
+	const root = path.join(__dirname, '..');
+	const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+	const build = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).build;
+	// A PNG's size sits in its IHDR chunk, bytes 16 to 24.
+	const size = (name) => { const png = fs.readFileSync(path.join(root, 'assets', name)); return [png.readUInt32BE(16), png.readUInt32BE(20)]; };
+	for (const name of ['trayTemplate.png', 'tray.ico', 'tray.png']) assert.ok(main.includes(`'${name}'`), `main.js uses ${name}`);
+	// macOS takes a tray image as a template only by its name, and finds the @2x beside it by name too.
+	assert.deepEqual(size('trayTemplate@2x.png').map((n) => n / 2), size('trayTemplate.png'));
+	assert.ok(size('trayTemplate.png')[1] <= 22, 'no taller than the menu bar');
+	const ico = fs.readFileSync(path.join(root, 'assets', 'tray.ico'));
+	const icoSizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico.readUInt8(6 + 16 * i));
+	for (const px of [16, 20, 24, 32]) assert.ok(icoSizes.includes(px), `tray.ico has ${px} px (Windows at ${px / 16 * 100}%)`);
+	for (const icon of [build.win.icon, build.mac.icon]) assert.deepEqual(size(icon.replace('assets/', '')), [1024, 1024], icon);
+	assert.ok(build.files.includes('assets/**'));
+});
+
 test('electron-updater is a runtime dependency, not a dev one', () => {
 	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 	assert.ok(pkg.dependencies['electron-updater']);

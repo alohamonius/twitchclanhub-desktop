@@ -267,7 +267,10 @@ else {
 		process.on('uncaughtException', (error) => note(`uncaught: ${error?.stack ?? error}`));
 		loadConfig(); token = loadToken();
 		note(`started ${app.getVersion()} on ${process.platform} ${os.release()} ${process.arch}, electron ${process.versions.electron}, server ${BASE}, ${token ? 'signed in' : 'not signed in'}`);
-		tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png')));
+		// macOS: a template image (black letters, @2x beside it) the menu bar tints itself; Windows: an .ico
+		// with a size for every scaling. All three come from assets/icon.svg (npm run icons).
+		const trayIcon = process.platform === 'darwin' ? 'trayTemplate.png' : process.platform === 'win32' ? 'tray.ico' : 'tray.png';
+		tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', trayIcon)));
 		wireSession();
 		// A monitor comes or goes, or changes resolution or scale (a game going fullscreen often does
 		// both): the overlay follows the chosen display's new bounds and claims the top again. Nothing is recreated.

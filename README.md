@@ -17,6 +17,7 @@ npm install && npm start      # запуск
 npm test                      # тести розбору посилань
 npm run dist:win              # інсталятор Windows (на Windows)
 npm run dist:mac              # універсальний DMG (на macOS)
+npm run icons                 # іконки в assets/ з assets/icon.svg (логотип сайту)
 ```
 
 MIT

@@ -1,0 +1,20 @@
+<!-- twitchclanhub app icon: the `tch` monogram: t + c + h, fused, one stroke weight throughout.
+     Copied from twitchclanhub.com apps/web/public/icon-tch.svg, which its scripts/logo.mjs generates:
+     edit the geometry there, copy the file here, then `npm run icons` renders every icon in assets/.
+     #ec5c32 accent / #b3361c dark / #1d221e ink: all three already in apps/web/src/styles/styles.css. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="600" height="600" viewBox="0 0 600 600" role="img" aria-label="twitchclanhub">
+  <defs>
+    <g id="g">
+    <path d="M 96 60 H 180 V 480 H 96 Z"/>
+    <path d="M 40 210 H 272 V 294 H 40 Z"/>
+    <path d="M 486.2 233.7 A 140 140 0 1 0 486.2 454.3 L 434.5 388.1 A 56 56 0 1 1 434.5 299.9 Z"/>
+    <path d="M 520 60 H 604 V 480 H 520 Z"/>
+    <path d="M 520 340 A 130 130 0 0 1 780 340 L 696 340 A 46 46 0 0 0 604 340 Z"/>
+    <path d="M 696 340 H 780 V 480 H 696 Z"/>
+    </g>
+    <clipPath id="torn"><path d="M -60.4 165.8 L -51.8 173.7 L -38.3 171.9 L -29.8 179.9 L -27.2 199.5 L -6 182.6 L 6.7 182.1 L 8.2 204 L 20.4 204.7 L 36.2 198.5 L 39.5 216.7 L 52.1 216.6 L 62.4 221.1 L 72.4 226.1 L 79.3 237.3 L 94 233.1 L 97.6 250.8 L 112.5 246.2 L 126.3 243.9 L 132.5 256.4 L 137.1 272.1 L 143.6 284 L 162.4 271.8 L 168.4 284.8 L 180.4 285.8 L 187.5 296.7 L 202.4 292 L 211 299.8 L 217.2 312.5 L 229.8 312.5 L 239.6 317.9 L 243.7 334.6 L 259.9 327.4 L 264.1 343.9 L 282.6 332.2 L 289.3 343.8 L 301.9 343.7 L 312.6 347.4 L 317.5 362.5 L 328.7 365.3 L 330.8 385.8 L 348.3 376.3 L 359.5 378.9 L 361.5 399.8 L 378 391.9 L 387.6 397.8 L 400.5 397.2 L 408.5 406.3 L 422.5 403.3 L 431 411.4 L 442.4 413.7 L 452.9 417.8 L 459.3 430 L 467.8 438 L 492 415 L 491.9 440 L 497.2 454.4 L 508 458 L 518.5 462.1 L 532.7 458.7 L 534.7 479.6 L 548.4 477.3 L 561.2 477 L 567.5 489.3 L 581.8 486 L 585.6 503.2 L 601.2 497.2 L 608.8 507.1 L 621.7 506.4 L 632.9 509 L 636.7 526.4 L 661.2 502.9 L 668.1 513.9 L 660 1200 L -60 1200 Z"/></clipPath>
+  </defs>
+  <rect width="600" height="600" rx="132" fill="#1d221e"/>
+  <use href="#g" xlink:href="#g" fill="#ec5c32" transform="translate(34.1 124.9) scale(0.6486)"/>
+  <g clip-path="url(#torn)"><use href="#g" xlink:href="#g" fill="#b3361c" transform="translate(34.1 124.9) scale(0.6486)"/></g>
+</svg>
