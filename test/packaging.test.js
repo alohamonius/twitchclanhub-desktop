@@ -47,7 +47,7 @@ test('electron-updater is a runtime dependency, not a dev one', () => {
 
 test('CI leaves a release a draft for sign-release, and every action it runs is pinned to a commit', () => {
 	const workflows = path.join(__dirname, '..', '.github', 'workflows');
-	const release = fs.readFileSync(path.join(workflows, 'release.yml'), 'utf8');
+	const release = fs.readFileSync(path.join(workflows, 'release.yml'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF
 	assert.match(release, /softprops\/action-gh-release@[0-9a-f]{40}[^\n]*\n\s+with:[\s\S]*?\n\s+draft: true\n/);
 	for (const name of fs.readdirSync(workflows)) {
 		for (const [, action] of fs.readFileSync(path.join(workflows, name), 'utf8').matchAll(/uses: (\S+)/g)) assert.match(action, /@[0-9a-f]{40}$/, `${name}: ${action}`);
