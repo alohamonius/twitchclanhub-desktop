@@ -8,6 +8,8 @@
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
     "icons": "electron scripts/icons.js",
+    "release-key": "node scripts/release-key.js",
+    "sign-release": "node scripts/sign-release.js",
     "dist:win": "electron-builder --win nsis --publish never",
     "dist:mac": "electron-builder --mac dmg --universal --publish never"
   },
@@ -26,6 +28,7 @@
       "flow.js",
       "log.js",
       "overlay.js",
+      "signature.js",
       "updater.js",
       "assets/**"
     ],
