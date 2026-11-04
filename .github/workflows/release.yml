@@ -1,9 +1,12 @@
 name: Release
 
-# A v* tag builds the standalone installers (Windows NSIS, macOS universal DMG) and publishes them
-# as one GitHub Release. The website links to .../releases/latest/download/<fixed name>, so the
-# names must stay: twitchclanhub-setup.exe, twitchclanhub-mac.dmg. The Windows build also ships
-# latest.yml and the .blockmap: electron-updater reads them from the latest release.
+# A v* tag builds the standalone installers (Windows NSIS, macOS universal DMG) into one GitHub
+# Release, left a draft: nobody gets it until the founder runs `npm run sign-release -- vX` on the Mac,
+# which signs the installer with the offline release key, adds the .sig and publishes. The website
+# links to .../releases/latest/download/<fixed name>, so the names must stay: twitchclanhub-setup.exe,
+# twitchclanhub-mac.dmg. The Windows build also ships latest.yml and the .blockmap: electron-updater
+# reads them from the latest release. Every action is pinned to a commit: a moved tag cannot change
+# what builds the installer.
 
 on:
   push:
@@ -32,8 +35,8 @@ jobs:
             artifact: mac
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.18.0
           cache: npm
@@ -46,7 +49,7 @@ jobs:
         run: |
           Get-ChildItem dist | Select-Object Name, Length
           if (-not (Test-Path dist/latest.yml)) { throw 'dist/latest.yml is missing: auto-update would not work' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.file }}
@@ -57,11 +60,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: assets
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: assets/*
           generate_release_notes: true
+          draft: true

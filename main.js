@@ -9,10 +9,11 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, safeStorage, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, net, safeStorage, screen, session, shell } = require('electron');
 const { pairDevice, PairingError } = require('./flow.js');
 const { createLog } = require('./log.js');
 const { createOverlay } = require('./overlay.js');
+const { verifyDownload } = require('./signature.js');
 const { createUpdater } = require('./updater.js');
 
 const BASE = (process.env.TCH_BASE || 'https://twitchclanhub.com').replace(/\/$/, '');
@@ -55,13 +56,16 @@ function note(message) { log.write(message); }
 const overlay = createOverlay({ createWindow: makeOverlayWindow, log: note });
 
 // Windows only: macOS updates need a signed app, so there it stays a manual download for now.
-const RELEASES = 'https://github.com/alohamonius/twitchclanhub-desktop/releases/latest';
+// An update installs only on the streamer's click and only with the release key's signature (signature.js).
+const REPO = 'https://github.com/alohamonius/twitchclanhub-desktop';
+const RELEASES = `${REPO}/releases/latest`;
 const updater = createUpdater({
 	autoUpdater: process.platform === 'win32' && app.isPackaged ? require('electron-updater').autoUpdater : null,
 	supported: process.platform === 'win32' && app.isPackaged,
+	verify: (info) => verifyDownload(info, { repo: REPO, fetchImpl: (url, init) => net.fetch(url, init) }),
 	log: (message) => note(message),
 	onChange: (state) => {
-		if (state.phase === 'ready') notify(`Нова версія ${state.version} готова. Вона встановиться при наступному запуску, або оберіть у треї «Перезапустити й оновити».`);
+		if (state.phase === 'ready') notify(`Нова версія ${state.version} завантажена й перевірена. Щоб оновити, оберіть у треї «Перезапустити й оновити».`);
 		refresh();
 	},
 });
@@ -207,7 +211,7 @@ async function clearCache() {
 
 /** What support needs first: version, system, state, then the newest log lines. No token, no key. */
 function supportText() {
-	const head = [`twitchclanhub desktop ${app.getVersion()}`, `${process.platform} ${os.release()} ${process.arch}`, `electron ${process.versions.electron}`, `server ${BASE}`, `state ${pairing ? 'pairing' : status}, ${token ? 'signed in' : 'not signed in'}, updates ${updater.state.phase}`, `muted ${config.muted}, hidden effects: ${config.skip.join(',') || 'none'}`];
+	const head = [`twitchclanhub desktop ${app.getVersion()}`, `${process.platform} ${os.release()} ${process.arch}`, `electron ${process.versions.electron}`, `server ${BASE}`, `state ${pairing ? 'pairing' : status}, ${token ? 'signed in' : 'not signed in'}, updates ${updater.state.phase}${updater.state.message ? ` (${updater.state.message})` : ''}`, `muted ${config.muted}, hidden effects: ${config.skip.join(',') || 'none'}`];
 	return `${head.join('\n')}\n\n${log.tail(300)}`;
 }
 function copyLogs() { clipboard.writeText(supportText()); note('logs copied to the clipboard'); notify('Логи скопійовано. Вставте їх у повідомлення в підтримку.'); }
@@ -250,7 +254,9 @@ function updateItem() {
 	if (phase === 'unsupported') return { label: `Версія ${app.getVersion()} · завантажити нову`, click: () => shell.openExternal(RELEASES) };
 	if (phase === 'checking') return { label: `Версія ${app.getVersion()} · перевіряю оновлення…`, enabled: false };
 	if (phase === 'downloading') return { label: `Версія ${app.getVersion()} · завантажую ${version ?? ''} ${percent ?? 0}%`, enabled: false };
+	if (phase === 'verifying') return { label: `Версія ${app.getVersion()} · перевіряю підпис ${version ?? ''}…`, enabled: false };
 	if (phase === 'ready') return { label: `Перезапустити й оновити до ${version}`, click: () => updater.installNow() };
+	if (phase === 'refused') return { label: `Версія ${app.getVersion()} · ${version} не пройшла перевірку підпису, ще раз`, click: () => void updater.check() };
 	if (phase === 'error') return { label: `Версія ${app.getVersion()} · оновлення не вдалось, ще раз`, click: () => void updater.check() };
 	return { label: `Версія ${app.getVersion()} · перевірити оновлення`, click: () => void updater.check() };
 }
