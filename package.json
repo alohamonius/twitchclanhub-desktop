@@ -1,6 +1,6 @@
 {
   "name": "twitchclanhub-desktop",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "description": "Tray app: draws the channel's alerts over the streamer's own screen",
   "main": "main.js",
