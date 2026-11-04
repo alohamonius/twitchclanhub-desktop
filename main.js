@@ -104,9 +104,12 @@ function wireSession() {
 
 /** Builds the overlay window at these bounds. overlay.js decides when: once per sign-in, then it is moved and reloaded in place. */
 function makeOverlayWindow({ x, y, width, height }) {
+	// enableLargerThanScreen (macOS only): without it macOS keeps the window off the menu bar and the
+	// Dock, so on a MacBook with the Dock on the left it opened at 59,33 instead of 0,0 and its right
+	// and bottom edges fell off the screen (Electron 33.2.1, 1512x982, 2026-11-04).
 	const window = new BrowserWindow({
 		x, y, width, height, transparent: true, frame: false, resizable: false, movable: false, focusable: false,
-		skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000',
+		skipTaskbar: true, hasShadow: false, show: false, backgroundColor: '#00000000', enableLargerThanScreen: true,
 		webPreferences: { session: session.fromPartition(PARTITION), autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, contextIsolation: true, sandbox: true },
 	});
 	window.setAlwaysOnTop(true, 'screen-saver');
