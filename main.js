@@ -13,12 +13,12 @@ const { app, BrowserWindow, Menu, Notification, Tray, clipboard, nativeImage, ne
 const { pairDevice, PairingError } = require('./flow.js');
 const { createLog } = require('./log.js');
 const { createOverlay } = require('./overlay.js');
+const { SCREEN_TOPICS, keptSkips } = require('./screen-topics.js');
 const { verifyDownload } = require('./signature.js');
 const { createUpdater } = require('./updater.js');
 
 const BASE = (process.env.TCH_BASE || 'https://twitchclanhub.com').replace(/\/$/, '');
 // The effect kinds fx.html can draw (packages/shared/src/effects.ts), with the names the streamer sees.
-const KINDS = [['banner', 'Банери'], ['rain', 'Дощ з емодзі'], ['sticker', 'Стікери та страшилки']];
 const PARTITION = 'persist:overlay';
 
 const defaults = { muted: false, skip: [], display: null };
@@ -31,7 +31,10 @@ let checkTimer = null;
 let log = { write() {}, tail: () => '', dir: '' }; // a real log from whenReady on
 
 const userFile = (name) => path.join(app.getPath('userData'), name);
-function loadConfig() { try { config = { ...defaults, ...JSON.parse(fs.readFileSync(userFile('config.json'), 'utf8')) }; } catch { config = { ...defaults }; } }
+function loadConfig() {
+	try { config = { ...defaults, ...JSON.parse(fs.readFileSync(userFile('config.json'), 'utf8')) }; } catch { config = { ...defaults }; }
+	config.skip = keptSkips(config.skip);
+}
 function saveConfig() { try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(userFile('config.json'), JSON.stringify(config)); } catch { /* the next change saves again */ } }
 
 // The token lives encrypted by the OS (DPAPI on Windows, Keychain on macOS). Without that, it is
@@ -230,9 +233,9 @@ function menu() {
 			? { label: 'Відключити від каналу', click: () => { stopChecks(); overlay.close(); saveToken(null); status = 'unpaired'; refresh(); } }
 			: { label: pairing ? 'Скасувати підключення' : 'Підключити до каналу', click: () => { if (pairing) { pairing.cancelled = true; } else void startPairing(); } },
 		{ label: 'Вимкнути звук', type: 'checkbox', checked: config.muted, click: (item) => { config.muted = item.checked; saveConfig(); overlay.setMuted(config.muted); } },
-		{ label: 'Що показувати на моєму екрані', submenu: KINDS.map(([kind, label]) => ({
-			label, type: 'checkbox', checked: !config.skip.includes(kind),
-			click: (item) => { config.skip = item.checked ? config.skip.filter((k) => k !== kind) : [...new Set([...config.skip, kind])]; saveConfig(); showOverlay(); },
+		{ label: 'Що показувати на моєму екрані', submenu: SCREEN_TOPICS.map(([topic, label]) => ({
+			label, type: 'checkbox', checked: !config.skip.includes(topic),
+			click: (item) => { config.skip = keptSkips(item.checked ? config.skip.filter((k) => k !== topic) : [...config.skip, topic]); saveConfig(); showOverlay(); },
 		})) },
 		{ label: 'Монітор', submenu: displays.map((d, i) => ({ label: `Екран ${i + 1} (${d.bounds.width}×${d.bounds.height})`, type: 'radio', checked: d.id === current, click: () => { config.display = d.id; saveConfig(); showOverlay(); } })) },
 		{ label: process.platform === 'darwin' ? 'Запускати при вході в систему' : 'Запускати з Windows', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },

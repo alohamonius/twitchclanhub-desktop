@@ -30,6 +30,7 @@
       "overlay.js",
       "signature.js",
       "updater.js",
+      "screen-topics.js",
       "assets/**"
     ],
     "win": {
